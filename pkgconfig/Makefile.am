@@ -3,7 +3,8 @@
 pcverfiles =  \
 	gstreamer-plugins-bad-@GST_API_VERSION@.pc \
 	gstreamer-codecparsers-@GST_API_VERSION@.pc \
-	gstreamer-insertbin-@GST_API_VERSION@.pc
+	gstreamer-insertbin-@GST_API_VERSION@.pc \
+	gstreamer-mpegts-@GST_API_VERSION@.pc
 
 pcverfiles_uninstalled = \
 	gstreamer-plugins-bad-@GST_API_VERSION@-uninstalled.pc \
@@ -35,7 +36,8 @@ pcinfiles = \
            gstreamer-plugins-bad.pc.in gstreamer-plugins-bad-uninstalled.pc.in \
            gstreamer-codecparsers.pc.in gstreamer-codecparsers-uninstalled.pc.in \
            gstreamer-insertbin.pc.in gstreamer-insertbin-uninstalled.pc.in \
-           gstreamer-egl.pc.in gstreamer-egl-uninstalled.pc.in
+           gstreamer-egl.pc.in gstreamer-egl-uninstalled.pc.in \
+           gstreamer-mpegts.pc.in
 
 DISTCLEANFILES = $(pcinfiles:.in=)
 EXTRA_DIST = $(pcinfiles)
