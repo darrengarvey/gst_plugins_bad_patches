@@ -144,16 +144,20 @@ gst_hls_demux_dispose (GObject * obj)
   }
 
   if (demux->updates_task) {
-    if (GST_TASK_STATE (demux->updates_task) != GST_TASK_STOPPED) {
+    GstTaskState updates_task_state = gst_task_get_state(demux->updates_task);
+
+    if (updates_task_state != GST_TASK_STOPPED) {
       GST_DEBUG_OBJECT (demux, "Leaving updates task");
       demux->cancelled = TRUE;
       gst_uri_downloader_cancel (demux->downloader);
       gst_task_stop (demux->updates_task);
-      g_mutex_lock (&demux->updates_timed_lock);
+      if(updates_task_state == GST_TASK_STARTED)
+        g_mutex_lock (&demux->updates_timed_lock);
       GST_TASK_SIGNAL (demux->updates_task);
       g_rec_mutex_lock (&demux->updates_lock);
       g_rec_mutex_unlock (&demux->updates_lock);
-      g_mutex_unlock (&demux->updates_timed_lock);
+      if(updates_task_state == GST_TASK_STARTED)
+        g_mutex_unlock (&demux->updates_timed_lock);
       gst_task_join (demux->updates_task);
     }
     gst_object_unref (demux->updates_task);
@@ -406,10 +410,15 @@ gst_hls_demux_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
       demux->cancelled = TRUE;
       gst_task_pause (demux->stream_task);
       gst_uri_downloader_cancel (demux->downloader);
+      updates_task_state = gst_task_get_state(demux->updates_task);
       gst_task_stop (demux->updates_task);
-      g_mutex_lock (&demux->updates_timed_lock);
+      if(updates_task_state == GST_TASK_STARTED){
+        g_mutex_lock (&demux->updates_timed_lock);
+      }
       GST_TASK_SIGNAL (demux->updates_task);
-      g_mutex_unlock (&demux->updates_timed_lock);
+      if(updates_task_state == GST_TASK_STARTED){
+        g_mutex_unlock (&demux->updates_timed_lock);
+      }
       g_rec_mutex_lock (&demux->updates_lock);
       g_rec_mutex_unlock (&demux->updates_lock);
       gst_task_pause (demux->stream_task);
@@ -604,14 +613,17 @@ gst_hls_demux_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
 static void
 gst_hls_demux_pause_tasks (GstHLSDemux * demux, gboolean caching)
 {
+  GstTaskState updates_task_state;
+
   if (GST_TASK_STATE (demux->updates_task) != GST_TASK_STOPPED) {
     demux->cancelled = TRUE;
     gst_uri_downloader_cancel (demux->downloader);
     gst_task_pause (demux->updates_task);
-    if (!caching)
+    updates_task_state = gst_task_get_state(demux->updates_task);
+    if (!caching && updates_task_state == GST_TASK_STARTED)
       g_mutex_lock (&demux->updates_timed_lock);
     GST_TASK_SIGNAL (demux->updates_task);
-    if (!caching)
+    if (!caching && updates_task_state == GST_TASK_STARTED)
       g_mutex_unlock (&demux->updates_timed_lock);
   }
 
@@ -626,7 +638,7 @@ gst_hls_demux_stop (GstHLSDemux * demux)
 {
   gst_uri_downloader_cancel (demux->downloader);
 
-  if (GST_TASK_STATE (demux->updates_task) != GST_TASK_STOPPED) {
+  if (GST_TASK_STATE (demux->updates_task) != GST_TASK_STOPPED && !demux->cancelled) {
     demux->cancelled = TRUE;
     gst_uri_downloader_cancel (demux->downloader);
     gst_task_stop (demux->updates_task);
@@ -637,7 +649,7 @@ gst_hls_demux_stop (GstHLSDemux * demux)
     g_rec_mutex_unlock (&demux->updates_lock);
   }
 
-  if (GST_TASK_STATE (demux->stream_task) != GST_TASK_STOPPED) {
+  if (GST_TASK_STATE (demux->stream_task) != GST_TASK_STOPPED && !demux->stop_stream_task) {
     demux->stop_stream_task = TRUE;
     gst_task_stop (demux->stream_task);
     g_rec_mutex_lock (&demux->stream_lock);
