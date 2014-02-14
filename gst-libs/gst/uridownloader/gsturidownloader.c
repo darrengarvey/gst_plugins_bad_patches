@@ -464,8 +464,10 @@ gst_uri_downloader_fetch_uri_with_range (GstUriDownloader * downloader,
 
 quit:
   {
+    /* YV: need to release lock because gst_uri_downloader_stop needs to change the
+       state of this element */
+    GST_OBJECT_UNLOCK (downloader); 
     gst_uri_downloader_stop (downloader);
-    GST_OBJECT_UNLOCK (downloader);
     g_mutex_unlock (&downloader->priv->download_lock);
     return download;
   }
