@@ -789,13 +789,13 @@ end_of_playlist:
   {
     GST_DEBUG_OBJECT (demux, "Reached end of playlist, sending EOS");
     gst_pad_push_event (demux->srcpad, gst_event_new_eos ());
-    gst_hls_demux_pause_tasks (demux, FALSE);
+    if (!demux->cancelled) 
+      gst_hls_demux_pause_tasks (demux, FALSE);
     return;
   }
 
 cache_error:
   {
-    gst_task_pause (demux->stream_task);
     if (!demux->cancelled) {
       GST_ELEMENT_ERROR (demux, RESOURCE, NOT_FOUND,
           ("Could not cache the first fragments"), (NULL));
@@ -814,14 +814,16 @@ error_pushing:
       GST_DEBUG_OBJECT (demux, "stream stopped, reason %s",
           gst_flow_get_name (ret));
     }
-    gst_hls_demux_pause_tasks (demux, FALSE);
+    if (!demux->cancelled)
+      gst_hls_demux_pause_tasks (demux, FALSE);
     return;
   }
 
 pause_task:
   {
     GST_DEBUG_OBJECT (demux, "Pause task");
-    gst_task_pause (demux->stream_task);
+    if (!demux->cancelled)
+      gst_task_pause (demux->stream_task);
     return;
   }
 }
