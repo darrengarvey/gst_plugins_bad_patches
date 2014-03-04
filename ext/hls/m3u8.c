@@ -339,7 +339,7 @@ gst_m3u8_update (GstM3U8 * self, gchar * data, gboolean * updated)
         } else if (g_str_equal (a, "RESOLUTION")) {
           if (!int_from_string (v, &v, &list->width))
             GST_WARNING ("Error while reading RESOLUTION width");
-          if (!v || *v != '=') {
+          if (!v || *v != 'x') {
             GST_WARNING ("Missing height");
           } else {
             v = g_utf8_next_char (v);
