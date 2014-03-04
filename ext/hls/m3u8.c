@@ -594,7 +594,8 @@ gst_m3u8_client_get_duration (GstM3U8Client * client)
     return GST_CLOCK_TIME_NONE;
   }
 
-  g_list_foreach (client->current->files, (GFunc) _sum_duration, &duration);
+  if (client->current && client->current->files)
+    g_list_foreach (client->current->files, (GFunc) _sum_duration, &duration);
   GST_M3U8_CLIENT_UNLOCK (client);
   return duration;
 }

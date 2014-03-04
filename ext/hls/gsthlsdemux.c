@@ -1094,13 +1094,14 @@ gst_hls_demux_update_playlist (GstHLSDemux * demux, gboolean update)
   /*  If it's a live source, do not let the sequence number go beyond
    * three fragments before the end of the list */
   if (updated && update == FALSE && demux->client->current &&
+      demux->client->current->files && 
       gst_m3u8_client_is_live (demux->client)) {
     guint last_sequence;
+    GstM3U8MediaFile *file;
 
     GST_M3U8_CLIENT_LOCK (demux->client);
-    last_sequence =
-        GST_M3U8_MEDIA_FILE (g_list_last (demux->client->current->
-            files)->data)->sequence;
+    file = GST_M3U8_MEDIA_FILE (g_list_last (demux->client->current->files)->data);
+    last_sequence = file ? file->sequence : -3;
 
     if (demux->client->sequence >= last_sequence - 3) {
       GST_DEBUG_OBJECT (demux, "Sequence is beyond playlist. Moving back to %d",
