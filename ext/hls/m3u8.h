@@ -58,6 +58,9 @@ struct _GstM3U8
   GList *current_variant;       /* Current variant playlist used */
   GstM3U8 *parent;              /* main playlist (if any) */
   guint mediasequence;          /* EXT-X-MEDIA-SEQUENCE & increased with new media file */
+
+  /* YV: record first seen sequence number - used for seek range calculation */
+  gint first_sequence_number;
 };
 
 struct _GstM3U8MediaFile
@@ -88,7 +91,8 @@ gboolean gst_m3u8_client_get_next_fragment (GstM3U8Client * client,
     gboolean * discontinuity, const gchar ** uri, GstClockTime * duration,
     GstClockTime * timestamp, const gchar ** key, const guint8 ** iv);
 void gst_m3u8_client_get_current_position (GstM3U8Client * client,
-    GstClockTime * timestamp);
+                                           GstClockTime * timestamp);
+gboolean gst_m3u8_client_get_seek_range(GstM3U8Client * client, gint64 * start, gint64 * stop);
 GstClockTime gst_m3u8_client_get_duration (GstM3U8Client * client);
 GstClockTime gst_m3u8_client_get_target_duration (GstM3U8Client * client);
 const gchar *gst_m3u8_client_get_uri(GstM3U8Client * client);

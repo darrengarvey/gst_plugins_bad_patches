@@ -47,6 +47,9 @@ gst_m3u8_new (void)
 
   m3u8 = g_new0 (GstM3U8, 1);
 
+  if(m3u8)
+    m3u8->first_sequence_number=-1;
+
   return m3u8;
 }
 
@@ -365,8 +368,12 @@ gst_m3u8_update (GstM3U8 * self, gchar * data, gboolean * updated)
       if (int_from_string (data + 22, &data, &val))
         self->targetduration = val * GST_SECOND;
     } else if (g_str_has_prefix (data, "#EXT-X-MEDIA-SEQUENCE:")) {
-      if (int_from_string (data + 22, &data, &val))
+      if (int_from_string (data + 22, &data, &val)){
         self->mediasequence = val;
+        if(self->first_sequence_number<0){
+          self->first_sequence_number = self->mediasequence;
+        }
+      }
     } else if (g_str_has_prefix (data, "#EXT-X-DISCONTINUITY")) {
       /* discontinuity = TRUE; */
     } else if (g_str_has_prefix (data, "#EXT-X-PROGRAM-DATE-TIME:")) {
@@ -602,15 +609,40 @@ gst_m3u8_client_get_duration (GstM3U8Client * client)
 
   GST_M3U8_CLIENT_LOCK (client);
   /* We can only get the duration for on-demand streams */
-  if (!client->current->endlist) {
+/*  if (!client->current->endlist) {
     GST_M3U8_CLIENT_UNLOCK (client);
     return GST_CLOCK_TIME_NONE;
-  }
+  }*/
 
   if (client->current && client->current->files)
     g_list_foreach (client->current->files, (GFunc) _sum_duration, &duration);
   GST_M3U8_CLIENT_UNLOCK (client);
   return duration;
+}
+
+gboolean gst_m3u8_client_get_seek_range(GstM3U8Client * client, gint64 * start, gint64 * stop)
+{
+  GstClockTime duration;
+
+  g_return_val_if_fail (client != NULL, FALSE);
+
+  duration = gst_m3u8_client_get_duration (client);
+  if (!GST_CLOCK_TIME_IS_VALID (duration) || duration <= 0)
+    return FALSE;
+  *start = 0;
+  *stop = duration;
+  if (gst_m3u8_client_is_live (client)) {
+    GstM3U8MediaFile *file=NULL;
+    GST_M3U8_CLIENT_LOCK (client);
+    if(client->current->files)
+      file = GST_M3U8_MEDIA_FILE (client->current->files->data);
+    if(file){
+      *start = (file->sequence - client->current->first_sequence_number) * client->current->targetduration;
+      *stop += *start;
+    }
+    GST_M3U8_CLIENT_UNLOCK (client);
+  }
+  return TRUE;
 }
 
 GstClockTime
