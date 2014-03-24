@@ -39,6 +39,8 @@ static GstM3U8MediaFile *gst_m3u8_media_file_new (gchar * uri,
     gchar * title, GstClockTime duration, guint sequence);
 static void gst_m3u8_media_file_free (GstM3U8MediaFile * self);
 gchar *uri_join (const gchar * uri, const gchar * path);
+static gboolean
+gst_m3u8_client_is_live_no_lock (GstM3U8Client * client);
 
 static GstM3U8 *
 gst_m3u8_new (void)
@@ -622,26 +624,41 @@ gst_m3u8_client_get_duration (GstM3U8Client * client)
 
 gboolean gst_m3u8_client_get_seek_range(GstM3U8Client * client, gint64 * start, gint64 * stop)
 {
-  GstClockTime duration;
-
+  GstClockTime duration=0;
+  GList *walk;
+  GstM3U8MediaFile *file;
+  guint count;
+   
   g_return_val_if_fail (client != NULL, FALSE);
+  g_return_val_if_fail (client->current != NULL, FALSE);
+  g_return_val_if_fail (client->current->files != NULL, FALSE);
+  
+  GST_M3U8_CLIENT_LOCK (client);
 
-  duration = gst_m3u8_client_get_duration (client);
-  if (!GST_CLOCK_TIME_IS_VALID (duration) || duration <= 0)
+  count = g_list_length(client->current->files);
+
+  /* count>=3 is used to make sure the seek range is never closer than three fragments
+     from the end of the playlist - see 6.3.3. "Playing the Playlist file" of the
+     HLS draft */
+  for (walk = client->current->files; walk && count>=3; walk = walk->next) {
+    file = walk->data;
+    --count;
+    duration += file->duration;
+  }
+
+  if (duration <= 0) {
+    GST_M3U8_CLIENT_UNLOCK (client);
     return FALSE;
+  }
   *start = 0;
   *stop = duration;
-  if (gst_m3u8_client_is_live (client)) {
-    GstM3U8MediaFile *file=NULL;
-    GST_M3U8_CLIENT_LOCK (client);
-    if(client->current->files)
-      file = GST_M3U8_MEDIA_FILE (client->current->files->data);
-    if(file){
-      *start = (file->sequence - client->current->first_sequence_number) * client->current->targetduration;
-      *stop += *start;
-    }
-    GST_M3U8_CLIENT_UNLOCK (client);
+  if (gst_m3u8_client_is_live_no_lock (client)) {
+    file = GST_M3U8_MEDIA_FILE (client->current->files->data);
+    *start = (gint64)(file->sequence - client->current->first_sequence_number) *
+             (gint64)client->current->targetduration;
+    *stop += *start;
   }
+  GST_M3U8_CLIENT_UNLOCK (client);
   return TRUE;
 }
 
@@ -701,15 +718,23 @@ gboolean
 gst_m3u8_client_is_live (GstM3U8Client * client)
 {
   gboolean ret;
+  GST_M3U8_CLIENT_LOCK (client);
+  ret = gst_m3u8_client_is_live_no_lock (client);
+  GST_M3U8_CLIENT_UNLOCK (client);
+  return ret;
+}
+
+static gboolean
+gst_m3u8_client_is_live_no_lock (GstM3U8Client * client)
+{
+  gboolean ret;
 
   g_return_val_if_fail (client != NULL, FALSE);
 
-  GST_M3U8_CLIENT_LOCK (client);
   if (!client->current || client->current->endlist)
     ret = FALSE;
   else
     ret = TRUE;
-  GST_M3U8_CLIENT_UNLOCK (client);
   return ret;
 }
 
