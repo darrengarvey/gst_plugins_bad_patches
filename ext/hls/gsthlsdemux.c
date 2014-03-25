@@ -357,11 +357,10 @@ gst_hls_demux_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
       GstFormat format;
       GstSeekFlags flags;
       GstSeekType start_type, stop_type;
-      gint64 start, stop;
+      gint64 start, stop, offset=0;
       GList *walk;
       GstClockTime position, current_pos, target_pos;
       gint current_sequence;
-      gint offset=0;
       GstM3U8MediaFile *file;
       GstTaskState updates_task_state;
 
