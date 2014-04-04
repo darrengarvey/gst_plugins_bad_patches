@@ -384,6 +384,10 @@ gst_hls_demux_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
           GST_ERROR_OBJECT (demux, "Failed to calculate seek range");
           return FALSE;
         }
+        GST_DEBUG_OBJECT (demux, "seek range %" GST_TIME_FORMAT
+                          " -> %" GST_TIME_FORMAT,
+                          GST_TIME_ARGS (range_start),
+                          GST_TIME_ARGS (range_stop));
         if(start<range_start || start>=range_stop){
           GST_WARNING_OBJECT (demux, "Seek to invalid position");
           return FALSE;
@@ -448,7 +452,7 @@ gst_hls_demux_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
       GST_DEBUG_OBJECT (demux, "seeking to sequence %d", current_sequence);
       demux->client->sequence = current_sequence;
       gst_m3u8_client_get_current_position (demux->client, &position);
-      demux->position_shift = start - position - offset;
+      demux->position_shift = start - position;
       demux->need_segment = TRUE;
       demux->seeking = TRUE;
       GST_M3U8_CLIENT_UNLOCK (demux->client);
@@ -1116,8 +1120,8 @@ gst_hls_demux_update_playlist (GstHLSDemux * demux, gboolean update)
 
   updated = gst_m3u8_client_update (demux->client, playlist);
 
-  /*  If it's a live source, do not let the sequence number go beyond
-   * three fragments before the end of the list */
+  /*  If it's a live source, do not let the sequence number go less than
+   * GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE fragments before the end of the list */
   if (updated && update == FALSE && demux->client->current &&
       demux->client->current->files && 
       gst_m3u8_client_is_live (demux->client)) {
@@ -1128,12 +1132,12 @@ gst_hls_demux_update_playlist (GstHLSDemux * demux, gboolean update)
     file = GST_M3U8_MEDIA_FILE (g_list_last (demux->client->current->files)->data);
     last_sequence = file ? file->sequence : -3;
 
-    if (demux->client->sequence >= last_sequence - 3) {
+    if (demux->client->sequence > last_sequence - (GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE-1)) {
       GST_DEBUG_OBJECT (demux, "Sequence is beyond playlist. Moving back to %d",
-          last_sequence - 3);
+          last_sequence - GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE + 1);
       demux->need_segment = TRUE;
       demux->seeking=TRUE;
-      demux->client->sequence = last_sequence - 3;
+      demux->client->sequence = last_sequence - GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE + 1;
     }
     GST_M3U8_CLIENT_UNLOCK (demux->client);
   }

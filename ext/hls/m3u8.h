@@ -35,6 +35,12 @@ typedef struct _GstM3U8Client GstM3U8Client;
 #define GST_M3U8_CLIENT_LOCK(c) g_mutex_lock (c->lock);
 #define GST_M3U8_CLIENT_UNLOCK(c) g_mutex_unlock (c->lock);
 
+/* hlsdemux must not get closer to the end of a live stream than
+   GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE fragments. Section 6.3.3
+   "Playing the Playlist file" of the HLS draft states that this
+   value is three fragments */
+#define GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE 3
+
 struct _GstM3U8
 {
   gchar *uri;
@@ -58,9 +64,6 @@ struct _GstM3U8
   GList *current_variant;       /* Current variant playlist used */
   GstM3U8 *parent;              /* main playlist (if any) */
   guint mediasequence;          /* EXT-X-MEDIA-SEQUENCE & increased with new media file */
-
-  /* YV: record first seen sequence number - used for seek range calculation */
-  gint first_sequence_number;
 };
 
 struct _GstM3U8MediaFile
@@ -79,6 +82,9 @@ struct _GstM3U8Client
   GstM3U8 *current;
   guint update_failed_count;
   gint sequence;                /* the next sequence for this client */
+  gint64 highest_sequence_number; /* largest seen sequence number */
+  GstClockTime first_file_start; /* timecode of the start of the first fragment in the current media playlist */
+  GstClockTime last_file_end; /* timecode of the end of the last fragment in the current media playlist */
   GMutex *lock;
 };
 
