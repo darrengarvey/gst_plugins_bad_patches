@@ -910,7 +910,8 @@ gst_hls_demux_updates_loop (GstHLSDemux * demux)
       goto quit;
 
     /* schedule the next update */
-    gst_hls_demux_schedule (demux);
+    if(!gst_hls_demux_schedule (demux))
+      goto quit;
 
     /*  block until the next scheduled update or the signal to quit this thread */
     GST_DEBUG_OBJECT (demux, "Waiting");
@@ -1219,6 +1220,7 @@ gst_hls_demux_schedule (GstHLSDemux * demux)
 {
   gfloat update_factor;
   gint count;
+  GstClockTime target_dur;
 
   /* As defined in §6.3.4. Reloading the Playlist file:
    * "If the client reloads a Playlist file and finds that it has not
@@ -1232,11 +1234,14 @@ gst_hls_demux_schedule (GstHLSDemux * demux)
   else
     update_factor = update_interval_factor[3];
 
+  target_dur = gst_m3u8_client_get_target_duration (demux->client);
+  if(target_dur==GST_CLOCK_TIME_NONE)
+    return FALSE;
+
   /* schedule the next update using the target duration field of the
    * playlist */
   g_time_val_add (&demux->next_update,
-      gst_m3u8_client_get_target_duration (demux->client)
-      / GST_SECOND * G_USEC_PER_SEC * update_factor);
+      target_dur / GST_SECOND * G_USEC_PER_SEC * update_factor);
   GST_DEBUG_OBJECT (demux, "Next update scheduled at %s",
       g_time_val_to_iso8601 (&demux->next_update));
 

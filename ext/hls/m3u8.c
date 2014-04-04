@@ -644,6 +644,8 @@ gst_m3u8_client_get_duration (GstM3U8Client * client)
 
   if (client->current && client->current->files)
     g_list_foreach (client->current->files, (GFunc) _sum_duration, &duration);
+  else
+    duration = GST_CLOCK_TIME_NONE;
   GST_M3U8_CLIENT_UNLOCK (client);
   return duration;
 }
@@ -689,12 +691,13 @@ gboolean gst_m3u8_client_get_seek_range(GstM3U8Client * client, gint64 * start, 
 GstClockTime
 gst_m3u8_client_get_target_duration (GstM3U8Client * client)
 {
-  GstClockTime duration = 0;
+  GstClockTime duration = GST_CLOCK_TIME_NONE;
 
   g_return_val_if_fail (client != NULL, GST_CLOCK_TIME_NONE);
 
   GST_M3U8_CLIENT_LOCK (client);
-  duration = client->current->targetduration;
+  if(client->current)
+    duration = client->current->targetduration;
   GST_M3U8_CLIENT_UNLOCK (client);
   return duration;
 }
