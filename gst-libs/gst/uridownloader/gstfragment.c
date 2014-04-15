@@ -211,8 +211,8 @@ gst_fragment_get_buffer (GstFragment * fragment)
 
   if (!fragment->completed)
     return NULL;
-
-  gst_buffer_ref (fragment->priv->buffer);
+  if(fragment->priv->buffer)
+      gst_buffer_ref (fragment->priv->buffer);
   return fragment->priv->buffer;
 }
 
