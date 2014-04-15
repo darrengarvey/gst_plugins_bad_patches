@@ -85,6 +85,8 @@ struct _GstM3U8Client
   gint64 highest_sequence_number; /* largest seen sequence number */
   GstClockTime first_file_start; /* timecode of the start of the first fragment in the current media playlist */
   GstClockTime last_file_end; /* timecode of the end of the last fragment in the current media playlist */
+  gint seek_target_sequence; /* the sequence number that is the destination for a seek */
+  GstClockTime seek_target_time; /* the timecode that is the destination for a seek */
   GMutex *lock;
 };
 
@@ -99,12 +101,14 @@ gboolean gst_m3u8_client_get_next_fragment (GstM3U8Client * client,
 void gst_m3u8_client_get_current_position (GstM3U8Client * client,
                                            GstClockTime * timestamp);
 gboolean gst_m3u8_client_get_seek_range(GstM3U8Client * client, gint64 * start, gint64 * stop);
+gboolean gst_m3u8_client_get_seek_range_no_lock(GstM3U8Client * client, gint64 * start, gint64 * stop);
 GstClockTime gst_m3u8_client_get_duration (GstM3U8Client * client);
 GstClockTime gst_m3u8_client_get_target_duration (GstM3U8Client * client);
 const gchar *gst_m3u8_client_get_uri(GstM3U8Client * client);
 const gchar *gst_m3u8_client_get_current_uri(GstM3U8Client * client);
 gboolean gst_m3u8_client_has_variant_playlist(GstM3U8Client * client);
 gboolean gst_m3u8_client_is_live(GstM3U8Client * client);
+gboolean gst_m3u8_client_is_live_no_lock(GstM3U8Client * client);
 GList * gst_m3u8_client_get_playlist_for_bitrate (GstM3U8Client * client,
     guint bitrate);
 

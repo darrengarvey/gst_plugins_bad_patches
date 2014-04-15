@@ -39,8 +39,6 @@ static GstM3U8MediaFile *gst_m3u8_media_file_new (gchar * uri,
     gchar * title, GstClockTime duration, guint sequence);
 static void gst_m3u8_media_file_free (GstM3U8MediaFile * self);
 gchar *uri_join (const gchar * uri, const gchar * path);
-static gboolean
-gst_m3u8_client_is_live_no_lock (GstM3U8Client * client);
 
 static GstM3U8 *
 gst_m3u8_new (void)
@@ -652,6 +650,16 @@ gst_m3u8_client_get_duration (GstM3U8Client * client)
 
 gboolean gst_m3u8_client_get_seek_range(GstM3U8Client * client, gint64 * start, gint64 * stop)
 {
+  gboolean rv;
+  g_return_val_if_fail (client != NULL, FALSE);
+  GST_M3U8_CLIENT_LOCK (client);
+  rv = gst_m3u8_client_get_seek_range_no_lock(client, start, stop);
+  GST_M3U8_CLIENT_UNLOCK (client);
+  return rv;
+}
+
+gboolean gst_m3u8_client_get_seek_range_no_lock(GstM3U8Client * client, gint64 * start, gint64 * stop)
+{
   GstClockTime duration=0;
   GList *walk;
   GstM3U8MediaFile *file;
@@ -659,10 +667,7 @@ gboolean gst_m3u8_client_get_seek_range(GstM3U8Client * client, gint64 * start, 
    
   g_return_val_if_fail (client != NULL, FALSE);
   
-  GST_M3U8_CLIENT_LOCK (client);
-  
   if(client->current==NULL || client->current->files==NULL){
-	GST_M3U8_CLIENT_UNLOCK (client);
 	return FALSE;
   }
 
@@ -679,12 +684,10 @@ gboolean gst_m3u8_client_get_seek_range(GstM3U8Client * client, gint64 * start, 
   }
 
   if (duration <= 0) {
-    GST_M3U8_CLIENT_UNLOCK (client);
     return FALSE;
   }
   *start = client->first_file_start;
   *stop = *start + duration;
-  GST_M3U8_CLIENT_UNLOCK (client);
   return TRUE;
 }
 
@@ -751,7 +754,7 @@ gst_m3u8_client_is_live (GstM3U8Client * client)
   return ret;
 }
 
-static gboolean
+gboolean
 gst_m3u8_client_is_live_no_lock (GstM3U8Client * client)
 {
   gboolean ret;

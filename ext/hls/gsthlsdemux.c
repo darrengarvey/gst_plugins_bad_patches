@@ -249,7 +249,7 @@ gst_hls_demux_init (GstHLSDemux * demux)
   demux->fragments_cache = DEFAULT_FRAGMENTS_CACHE;
   demux->bitrate_limit = DEFAULT_BITRATE_LIMIT;
   demux->connection_speed = DEFAULT_CONNECTION_SPEED;
-  demux->seeking=FALSE;
+  demux->seeking=GST_HLSDEMUX_SEEK_STATE_IDLE;
   demux->queue = g_queue_new ();
 
   /* Updates task */
@@ -376,12 +376,14 @@ gst_hls_demux_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
           " stop: %" GST_TIME_FORMAT, rate, GST_TIME_ARGS (start),
           GST_TIME_ARGS (stop));
 
-      if (gst_m3u8_client_is_live (demux->client)) {
+      GST_M3U8_CLIENT_LOCK (demux->client);
+      if (gst_m3u8_client_is_live_no_lock (demux->client)) {
         gint64 range_start = GST_CLOCK_TIME_NONE;
         gint64 range_stop = GST_CLOCK_TIME_NONE;
         GST_DEBUG_OBJECT (demux, "Received seek event for live stream");
-        if(!gst_m3u8_client_get_seek_range(demux->client, &range_start, &range_stop)){
+        if(!gst_m3u8_client_get_seek_range_no_lock(demux->client, &range_start, &range_stop)){
           GST_ERROR_OBJECT (demux, "Failed to calculate seek range");
+          GST_M3U8_CLIENT_UNLOCK (demux->client);
           return FALSE;
         }
         GST_DEBUG_OBJECT (demux, "seek range %" GST_TIME_FORMAT
@@ -390,12 +392,12 @@ gst_hls_demux_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
                           GST_TIME_ARGS (range_stop));
         if(start<range_start || start>=range_stop){
           GST_WARNING_OBJECT (demux, "Seek to invalid position");
+          GST_M3U8_CLIENT_UNLOCK (demux->client);
           return FALSE;
         }
         offset = range_start;
       }
 
-      GST_M3U8_CLIENT_LOCK (demux->client);	  
       file = GST_M3U8_MEDIA_FILE (demux->client->current->files->data);
       current_pos = offset;
       current_sequence = file->sequence;
@@ -410,12 +412,20 @@ gst_hls_demux_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
         }
         current_pos += file->duration;
       }
-      GST_M3U8_CLIENT_UNLOCK (demux->client);
-
       if (walk == NULL) {
         GST_WARNING_OBJECT (demux, "Could not find seeked fragment");
+        GST_M3U8_CLIENT_UNLOCK (demux->client);
         return FALSE;
       }
+      if(demux->seeking==GST_HLSDEMUX_SEEK_STATE_FLUSHING){
+        GST_DEBUG_OBJECT (demux, "Seek already in progress, using other thread to complete seek");
+        GST_M3U8_CLIENT_UNLOCK (demux->client);
+        return TRUE;
+      }
+      demux->seeking=GST_HLSDEMUX_SEEK_STATE_FLUSHING;
+      demux->client->seek_target_sequence = current_sequence;
+      demux->client->seek_target_time = target_pos;
+      GST_M3U8_CLIENT_UNLOCK (demux->client);
 
       if (flags & GST_SEEK_FLAG_FLUSH) {
         GST_DEBUG_OBJECT (demux, "sending flush start");
@@ -441,7 +451,6 @@ gst_hls_demux_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
       /* wait for streaming to finish */
       g_rec_mutex_lock (&demux->stream_lock);
 
-      demux->need_cache = TRUE;
       while (!g_queue_is_empty (demux->queue)) {
         GstFragment *fragment = g_queue_pop_head (demux->queue);
         g_object_unref (fragment);
@@ -449,14 +458,15 @@ gst_hls_demux_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
       g_queue_clear (demux->queue);
 
       GST_M3U8_CLIENT_LOCK (demux->client);
-      GST_DEBUG_OBJECT (demux, "seeking to sequence %d", current_sequence);
-      demux->client->sequence = current_sequence;
+      demux->need_cache = TRUE;
+      GST_DEBUG_OBJECT (demux, "seeking to sequence %d", demux->client->seek_target_sequence);
+      if(demux->client->seek_target_time!=target_pos){
+        GST_DEBUG_OBJECT (demux, "completing seek for a position that changed during flush");
+      }
+      demux->client->sequence = demux->client->seek_target_sequence;
       gst_m3u8_client_get_current_position (demux->client, &position);
-      demux->position_shift = start - position;
+      demux->position_shift = demux->client->seek_target_time - position;
       demux->need_segment = TRUE;
-      demux->seeking = TRUE;
-      GST_M3U8_CLIENT_UNLOCK (demux->client);
-
 
       if (flags & GST_SEEK_FLAG_FLUSH) {
         GST_DEBUG_OBJECT (demux, "sending flush stop");
@@ -464,6 +474,8 @@ gst_hls_demux_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
       }
 
       demux->cancelled = FALSE;
+      demux->seeking = GST_HLSDEMUX_SEEK_STATE_STARTING;
+      GST_M3U8_CLIENT_UNLOCK (demux->client);
       gst_uri_downloader_reset (demux->downloader);
       gst_task_start (demux->stream_task);
       g_rec_mutex_unlock (&demux->stream_lock);
@@ -764,7 +776,7 @@ gst_hls_demux_stream_loop (GstHLSDemux * demux)
     srccaps = gst_pad_get_current_caps (demux->srcpad);
   bufcaps = gst_fragment_get_caps (fragment);
   if (G_UNLIKELY (!srccaps || !gst_caps_is_equal_fixed (bufcaps, srccaps)
-          || (demux->need_segment && !demux->seeking))) {
+          || (demux->need_segment && demux->seeking==GST_HLSDEMUX_SEEK_STATE_IDLE))) {
     switch_pads (demux, bufcaps);
     demux->need_segment = TRUE;
   }
@@ -787,7 +799,7 @@ gst_hls_demux_stream_loop (GstHLSDemux * demux)
     gst_pad_push_event (demux->srcpad, gst_event_new_segment (&segment));
     demux->need_segment = FALSE;
     demux->position_shift = 0;
-    demux->seeking=FALSE;
+    demux->seeking=GST_HLSDEMUX_SEEK_STATE_IDLE;
   }
 
   GST_DEBUG_OBJECT (demux, "Pushing buffer %p", buf);
@@ -878,7 +890,7 @@ gst_hls_demux_reset (GstHLSDemux * demux, gboolean dispose)
 
   demux->position_shift = 0;
   demux->need_segment = TRUE;
-  demux->seeking=FALSE;
+  demux->seeking = GST_HLSDEMUX_SEEK_STATE_IDLE;
   demux->have_group_id = FALSE;
   demux->group_id = G_MAXUINT;
 }
@@ -1111,6 +1123,10 @@ gst_hls_demux_update_playlist (GstHLSDemux * demux, gboolean update)
     return FALSE;
 
   buf = gst_fragment_get_buffer (download);
+  if(!buf){
+    g_object_unref (download);
+    return FALSE;
+  }
   playlist = gst_hls_src_buf_to_utf8_playlist (buf);
   g_object_unref (download);
 
@@ -1137,7 +1153,7 @@ gst_hls_demux_update_playlist (GstHLSDemux * demux, gboolean update)
       GST_DEBUG_OBJECT (demux, "Sequence is beyond playlist. Moving back to %d",
           last_sequence - GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE + 1);
       demux->need_segment = TRUE;
-      demux->seeking=TRUE;
+      demux->seeking = GST_HLSDEMUX_SEEK_STATE_STARTING;
       demux->client->sequence = last_sequence - GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE + 1;
     }
     GST_M3U8_CLIENT_UNLOCK (demux->client);

@@ -46,6 +46,12 @@ G_BEGIN_DECLS
 typedef struct _GstHLSDemux GstHLSDemux;
 typedef struct _GstHLSDemuxClass GstHLSDemuxClass;
 
+typedef enum {
+  GST_HLSDEMUX_SEEK_STATE_IDLE=0,
+  GST_HLSDEMUX_SEEK_STATE_FLUSHING=1,
+  GST_HLSDEMUX_SEEK_STATE_STARTING=2
+} GstHLSDemuxSeekState;
+  
 /**
  * GstHLSDemux:
  *
@@ -90,7 +96,7 @@ struct _GstHLSDemux
   /* Position in the stream */
   GstClockTime position_shift;
   gboolean need_segment;
-  gboolean seeking;
+  GstHLSDemuxSeekState seeking;
 };
 
 struct _GstHLSDemuxClass
