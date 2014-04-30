@@ -423,6 +423,8 @@ gst_hls_demux_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
         return TRUE;
       }
       demux->seeking=GST_HLSDEMUX_SEEK_STATE_FLUSHING;
+      /* DEVARCH-7368: force seek to be at a fragment boundary */
+      target_pos = current_pos;      
       demux->client->seek_target_sequence = current_sequence;
       demux->client->seek_target_time = target_pos;
       GST_M3U8_CLIENT_UNLOCK (demux->client);
