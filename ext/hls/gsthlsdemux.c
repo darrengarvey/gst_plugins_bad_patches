@@ -112,8 +112,9 @@ static void gst_hls_demux_stop (GstHLSDemux * demux);
 static void gst_hls_demux_pause_tasks (GstHLSDemux * demux, gboolean caching);
 static gboolean gst_hls_demux_cache_fragments (GstHLSDemux * demux);
 static gboolean gst_hls_demux_schedule (GstHLSDemux * demux);
-static gboolean gst_hls_demux_switch_playlist (GstHLSDemux * demux);
-static gboolean gst_hls_demux_get_next_fragment (GstHLSDemux * demux,
+static gboolean gst_hls_demux_calculate_download_rate (GstHLSDemux * demux, GstFragment * fragment, guint64 * bitrate);
+static gboolean gst_hls_demux_switch_playlist (GstHLSDemux * demux, GstFragment * fragment);
+static GstFragment* gst_hls_demux_get_next_fragment (GstHLSDemux * demux,
     gboolean caching);
 static gboolean gst_hls_demux_update_playlist (GstHLSDemux * demux,
     gboolean update);
@@ -915,6 +916,7 @@ gst_hls_demux_updates_loop (GstHLSDemux * demux)
    * update of fragments. When a new fragment is downloaded, it compares the
    * download time with the next scheduled update to check if we can or should
    * switch to a different bitrate */
+  GstFragment* fragment;
 
   /* block until the next scheduled update or the signal to quit this thread */
   g_mutex_lock (&demux->updates_timed_lock);
@@ -973,7 +975,8 @@ gst_hls_demux_updates_loop (GstHLSDemux * demux)
     /* fetch the next fragment */
     if (g_queue_is_empty (demux->queue)) {
       GST_DEBUG_OBJECT (demux, "queue empty, get next fragment");
-      if (!gst_hls_demux_get_next_fragment (demux, FALSE)) {
+      fragment = gst_hls_demux_get_next_fragment (demux, FALSE);
+      if (!fragment) {
         if (demux->cancelled) {
           goto quit;
         } else if (!demux->end_of_playlist && !demux->cancelled) {
@@ -990,11 +993,14 @@ gst_hls_demux_updates_loop (GstHLSDemux * demux)
       } else {
         demux->client->update_failed_count = 0;
 
-        if (demux->cancelled)
-          goto quit;
+        if (demux->cancelled){
+            g_object_unref(fragment);
+            goto quit;
+        }
 
         /* try to switch to another bitrate if needed */
-        gst_hls_demux_switch_playlist (demux);
+        gst_hls_demux_switch_playlist (demux, fragment);
+        g_object_unref(fragment);
       }
     }
   }
@@ -1056,11 +1062,13 @@ gst_hls_demux_cache_fragments (GstHLSDemux * demux)
 
   /* Cache the first fragments */
   for (i = 0; i < demux->fragments_cache; i++) {
+    GstFragment* fragment;
     gst_element_post_message (GST_ELEMENT (demux),
         gst_message_new_buffering (GST_OBJECT (demux),
             100 * i / demux->fragments_cache));
     g_get_current_time (&demux->next_update);
-    if (!gst_hls_demux_get_next_fragment (demux, TRUE)) {
+    fragment = gst_hls_demux_get_next_fragment (demux, TRUE);
+    if (!fragment) {
       if (demux->end_of_playlist)
         break;
       if (!demux->cancelled)
@@ -1068,9 +1076,12 @@ gst_hls_demux_cache_fragments (GstHLSDemux * demux)
       return FALSE;
     }
     /* make sure we stop caching fragments if something cancelled it */
-    if (demux->cancelled)
-      return FALSE;
-    gst_hls_demux_switch_playlist (demux);
+    if (demux->cancelled){
+        g_object_unref(fragment);
+        return FALSE;
+    }
+    gst_hls_demux_switch_playlist (demux,fragment);
+    g_object_unref(fragment);
   }
   gst_element_post_message (GST_ELEMENT (demux),
       gst_message_new_buffering (GST_OBJECT (demux), 100));
@@ -1267,36 +1278,49 @@ gst_hls_demux_schedule (GstHLSDemux * demux)
 }
 
 static gboolean
-gst_hls_demux_switch_playlist (GstHLSDemux * demux)
+gst_hls_demux_calculate_download_rate (GstHLSDemux * demux, GstFragment * fragment, guint64 * bitrate)
 {
-  GTimeVal now;
   GstClockTime diff;
   gsize size;
-  gint bitrate;
-  GstFragment *fragment;
   GstBuffer *buffer;
 
   GST_M3U8_CLIENT_LOCK (demux->client);
-  fragment = g_queue_peek_tail (demux->queue);
   if (!demux->client->main->lists || !fragment) {
     GST_M3U8_CLIENT_UNLOCK (demux->client);
     return TRUE;
   }
   GST_M3U8_CLIENT_UNLOCK (demux->client);
 
-  /* compare the time when the fragment was downloaded with the time when it was
-   * scheduled */
-  g_get_current_time (&now);
-  diff = (GST_TIMEVAL_TO_TIME (now) - GST_TIMEVAL_TO_TIME (demux->next_update));
+  diff = fragment->download_stop_time - fragment->download_start_time;
   buffer = gst_fragment_get_buffer (fragment);
   size = gst_buffer_get_size (buffer);
-  bitrate = (size * 8) / ((double) diff / GST_SECOND);
 
-  GST_DEBUG ("Downloaded %d bytes in %" GST_TIME_FORMAT ". Bitrate is : %d",
-      (guint) size, GST_TIME_ARGS (diff), bitrate);
+  /* use gstreamer util function so that it correctly handles overflow,
+     just in case caching causes a download faster than 2^31 bps or
+     downloads that take longer than 2^31 nanoseconds */
+  *bitrate = gst_util_uint64_scale_round (size*8,
+                                          GST_SECOND,
+                                          diff);
+  
+  GST_DEBUG ("Downloaded %d bytes in %" GST_TIME_FORMAT ". Bitrate is : %lld",
+             (guint) size, GST_TIME_ARGS (diff), *bitrate);
 
   gst_buffer_unref (buffer);
-  return gst_hls_demux_change_playlist (demux, bitrate * demux->bitrate_limit);
+  return TRUE;
+}
+
+static gboolean
+gst_hls_demux_switch_playlist (GstHLSDemux * demux, GstFragment * fragment)
+{
+    guint64 bitrate;
+
+    if (!gst_m3u8_client_has_variant_playlist (demux->client))
+        return TRUE;
+    
+    if(!gst_hls_demux_calculate_download_rate (demux, fragment, &bitrate))
+        return FALSE;
+    
+    return gst_hls_demux_change_playlist (demux, bitrate * demux->bitrate_limit);
 }
 
 static GstFragment *
@@ -1372,7 +1396,7 @@ key_failed:
   return ret;
 }
 
-static gboolean
+static GstFragment*
 gst_hls_demux_get_next_fragment (GstHLSDemux * demux, gboolean caching)
 {
   GstFragment *download;
@@ -1389,7 +1413,7 @@ gst_hls_demux_get_next_fragment (GstHLSDemux * demux, gboolean caching)
     GST_INFO_OBJECT (demux, "This playlist doesn't contain more fragments");
     demux->end_of_playlist = TRUE;
     gst_task_start (demux->stream_task);
-    return FALSE;
+    return NULL;
   }
 
   GST_INFO_OBJECT (demux, "Fetching next fragment %s", next_fragment_uri);
@@ -1432,16 +1456,17 @@ gst_hls_demux_get_next_fragment (GstHLSDemux * demux, gboolean caching)
   gst_buffer_unref (buf);
 
   GST_DEBUG_OBJECT (demux, "Pushing fragment in queue");
+  g_object_ref(download);
   g_queue_push_tail (demux->queue, download);
   if (!caching) {
     GST_TASK_SIGNAL (demux->updates_task);
     gst_task_start (demux->stream_task);
   }
-  return TRUE;
+  return download;
 
 error:
   {
     gst_hls_demux_stop (demux);
-    return FALSE;
+    return NULL;
   }
 }
