@@ -1027,6 +1027,8 @@ static gboolean
 gst_hls_demux_cache_fragments (GstHLSDemux * demux)
 {
   gint i;
+  guint64 bitrate;
+  gboolean done=FALSE;
 
   /* If this playlist is a variant playlist, select the first one
    * and update it */
@@ -1064,7 +1066,7 @@ gst_hls_demux_cache_fragments (GstHLSDemux * demux)
   }
 
   /* Cache the first fragments */
-  for (i = 0; i < demux->fragments_cache; i++) {
+  for (i = 0; i < demux->fragments_cache && !done; i++) {
     GstFragment* fragment;
     gst_element_post_message (GST_ELEMENT (demux),
         gst_message_new_buffering (GST_OBJECT (demux),
@@ -1084,7 +1086,18 @@ gst_hls_demux_cache_fragments (GstHLSDemux * demux)
         g_object_unref(fragment);
         return FALSE;
     }
-    gst_hls_demux_switch_playlist (demux,fragment);
+    
+    if(gst_m3u8_client_has_variant_playlist (demux->client) &&
+       gst_hls_demux_calculate_download_rate (demux, fragment, &bitrate)){
+      GST_M3U8_CLIENT_LOCK (demux->client);
+      if(demux->client->current && (2*demux->client->current->bandwidth)<bitrate){
+          GST_DEBUG_OBJECT (demux, "Download speed %lld, current variant bitrate %d - skipping fragment caching", bitrate, demux->client->current->bandwidth);
+          done=TRUE;
+      }
+      GST_M3U8_CLIENT_UNLOCK (demux->client);
+    }
+    if(!done)
+        gst_hls_demux_switch_playlist (demux, fragment);
     g_object_unref(fragment);
   }
   gst_element_post_message (GST_ELEMENT (demux),
