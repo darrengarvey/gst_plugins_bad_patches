@@ -911,6 +911,7 @@ gst_hls_demux_set_location (GstHLSDemux * demux, const gchar * uri)
 void
 gst_hls_demux_updates_loop (GstHLSDemux * demux)
 {
+  gint64 now;
   /* Loop for the updates. It's started when the first fragments are cached and
    * schedules the next update of the playlist (for lives sources) and the next
    * update of fragments. When a new fragment is downloaded, it compares the
@@ -941,8 +942,10 @@ gst_hls_demux_updates_loop (GstHLSDemux * demux)
     if (demux->cancelled)
       goto quit;
 
+    now = g_get_monotonic_time();
+
     /* update the playlist for live sources */
-    if (gst_m3u8_client_is_live (demux->client)) {
+    if (gst_m3u8_client_is_live (demux->client) && now>=demux->next_playlist_update) {
       if (!gst_hls_demux_update_playlist (demux, TRUE)) {
         if (demux->cancelled)
           goto quit;
@@ -1067,6 +1070,7 @@ gst_hls_demux_cache_fragments (GstHLSDemux * demux)
         gst_message_new_buffering (GST_OBJECT (demux),
             100 * i / demux->fragments_cache));
     g_get_current_time (&demux->next_update);
+    demux->next_playlist_update = g_get_monotonic_time();
     fragment = gst_hls_demux_get_next_fragment (demux, TRUE);
     if (!fragment) {
       if (demux->end_of_playlist)
@@ -1087,6 +1091,7 @@ gst_hls_demux_cache_fragments (GstHLSDemux * demux)
       gst_message_new_buffering (GST_OBJECT (demux), 100));
 
   g_get_current_time (&demux->next_update);
+  demux->next_playlist_update = g_get_monotonic_time();
 
   demux->need_cache = FALSE;
   return TRUE;
@@ -1250,6 +1255,7 @@ gst_hls_demux_schedule (GstHLSDemux * demux)
   gfloat update_factor;
   gint count;
   GstClockTime target_dur;
+  gint64 now;
 
   /* As defined in §6.3.4. Reloading the Playlist file:
    * "If the client reloads a Playlist file and finds that it has not
@@ -1267,6 +1273,19 @@ gst_hls_demux_schedule (GstHLSDemux * demux)
   if(target_dur==GST_CLOCK_TIME_NONE)
     return FALSE;
 
+  now = g_get_monotonic_time();
+  if(now >= demux->next_playlist_update){
+      demux->next_playlist_update += gst_util_uint64_scale_int (target_dur,
+                                                                G_USEC_PER_SEC * update_factor,
+                                                                GST_SECOND); 
+      GST_DEBUG_OBJECT (demux, "Next playlist update scheduled in %lf seconds",
+                        update_factor * target_dur / (double)GST_SECOND);
+  }
+
+  /* in the normal playback case, allow fragments to be downloaded up to 4x real time */
+  if(count==0)
+      update_factor = 0.25;
+  
   /* schedule the next update using the target duration field of the
    * playlist */
   g_time_val_add (&demux->next_update,

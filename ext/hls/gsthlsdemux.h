@@ -90,7 +90,8 @@ struct _GstHLSDemux
   GstTask *updates_task;
   GRecMutex updates_lock;
   GMutex updates_timed_lock;
-  GTimeVal next_update;         /* Time of the next update */
+  GTimeVal next_update;         /* Time of the next update of gst_hls_demux_updates_loop */
+  gint64 next_playlist_update;         /* Time of the next playlist update */
   gboolean cancelled;
 
   /* Position in the stream */
