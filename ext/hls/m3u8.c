@@ -403,8 +403,12 @@ gst_m3u8_update (GstM3U8Client * client, GstM3U8 * self, gchar * data, gboolean 
         goto next_line;
       }
       duration = fval * (gdouble) GST_SECOND;
-      if (duration > self->targetduration)
-        GST_WARNING ("EXTINF duration > TARGETDURATION");
+      if (duration > self->targetduration){
+          GST_WARNING ("EXTINF duration > TARGETDURATION");
+          /* set targetduration, so that the update task does not spin in a tight
+             loop trying to download playlist updates */
+          self->targetduration = duration;
+      }
       if (!data || *data != ',')
         goto next_line;
       data = g_utf8_next_char (data);
