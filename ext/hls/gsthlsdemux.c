@@ -765,7 +765,7 @@ gst_hls_demux_stream_loop (GstHLSDemux * demux)
   }
 
   if (g_queue_is_empty (demux->queue)) {
-    if (demux->end_of_playlist)
+    if(!gst_m3u8_client_is_live (demux->client) && demux->end_of_playlist)
       goto end_of_playlist;
 
     goto pause_task;
@@ -989,7 +989,7 @@ gst_hls_demux_updates_loop (GstHLSDemux * demux)
             continue;
           } else {
             GST_ELEMENT_ERROR (demux, RESOURCE, NOT_FOUND,
-                ("Could not fetch the next fragment"), (NULL));
+                ("Could not fetch the next fragment, giving up"), (NULL));
             goto error;
           }
         }
@@ -1167,6 +1167,9 @@ gst_hls_demux_update_playlist (GstHLSDemux * demux, gboolean update)
   }
 
   updated = gst_m3u8_client_update (demux->client, playlist);
+  
+  if(updated)
+      demux->end_of_playlist = FALSE;
 
   /*  If it's a live source, do not let the sequence number go less than
    * GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE fragments before the end of the list */
@@ -1221,6 +1224,9 @@ retry_failover_protection:
   GST_M3U8_CLIENT_UNLOCK (demux->client);
 
   gst_m3u8_client_set_current (demux->client, current_variant->data);
+  /* make sure the next call to gst_hls_demux_schedule re-calculates the time for the
+     next playlist reload */
+  demux->next_playlist_update = g_get_monotonic_time();
 
   GST_INFO_OBJECT (demux, "Client was on %dbps, max allowed is %dbps, switching"
       " to bitrate %dbps", old_bandwidth, max_bitrate, new_bandwidth);
