@@ -1171,28 +1171,6 @@ gst_hls_demux_update_playlist (GstHLSDemux * demux, gboolean update)
   if(updated)
       demux->end_of_playlist = FALSE;
 
-  /*  If it's a live source, do not let the sequence number go less than
-   * GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE fragments before the end of the list */
-  if (updated && update == FALSE && demux->client->current &&
-      demux->client->current->files && 
-      gst_m3u8_client_is_live (demux->client)) {
-    guint last_sequence;
-    GstM3U8MediaFile *file;
-
-    GST_M3U8_CLIENT_LOCK (demux->client);
-    file = GST_M3U8_MEDIA_FILE (g_list_last (demux->client->current->files)->data);
-    last_sequence = file ? file->sequence : -3;
-
-    if (demux->client->sequence > last_sequence - (GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE-1)) {
-      GST_DEBUG_OBJECT (demux, "Sequence is beyond playlist. Moving back to %d",
-          last_sequence - GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE + 1);
-      demux->need_segment = TRUE;
-      demux->seeking = GST_HLSDEMUX_SEEK_STATE_STARTING;
-      demux->client->sequence = last_sequence - GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE + 1;
-    }
-    GST_M3U8_CLIENT_UNLOCK (demux->client);
-  }
-
   return updated;
 }
 
