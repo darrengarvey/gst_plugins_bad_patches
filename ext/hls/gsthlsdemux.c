@@ -1029,6 +1029,7 @@ gst_hls_demux_cache_fragments (GstHLSDemux * demux)
   gint i;
   guint64 bitrate;
   gboolean done=FALSE;
+  gboolean rate_adapt=TRUE;
 
   /* If this playlist is a variant playlist, select the first one
    * and update it */
@@ -1091,12 +1092,28 @@ gst_hls_demux_cache_fragments (GstHLSDemux * demux)
        gst_hls_demux_calculate_download_rate (demux, fragment, &bitrate)){
       GST_M3U8_CLIENT_LOCK (demux->client);
       if(demux->client->current && (2*demux->client->current->bandwidth)<bitrate){
+          guint next_bandwidth, max_bitrate = bitrate;
+          GList *next_variant;
           GST_DEBUG_OBJECT (demux, "Download speed %lld, current variant bitrate %d - skipping fragment caching", bitrate, demux->client->current->bandwidth);
           done=TRUE;
+          rate_adapt=FALSE;
+          /* If user specifies a connection speed never use a playlist with a bandwidth
+           * superior than it */
+          if (demux->connection_speed != 0 && max_bitrate > demux->connection_speed)
+              max_bitrate = demux->connection_speed;
+
+          /* find out what the next playlist might be */
+          next_variant = gst_m3u8_client_get_playlist_for_bitrate_no_lock (demux->client, max_bitrate);
+          if(next_variant){
+              next_bandwidth = GST_M3U8 (next_variant->data)->bandwidth;
+              /* check if safe to perform ABR when in quick-start mode */
+              if((2*next_bandwidth)<bitrate)
+                  rate_adapt=TRUE;
+          }
       }
       GST_M3U8_CLIENT_UNLOCK (demux->client);
     }
-    if(!done)
+    if(rate_adapt)
         gst_hls_demux_switch_playlist (demux, fragment);
     g_object_unref(fragment);
   }

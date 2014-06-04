@@ -775,9 +775,18 @@ gst_m3u8_client_is_live_no_lock (GstM3U8Client * client)
 GList *
 gst_m3u8_client_get_playlist_for_bitrate (GstM3U8Client * client, guint bitrate)
 {
+  GList *current_variant;
+  GST_M3U8_CLIENT_LOCK (client);
+  current_variant = gst_m3u8_client_get_playlist_for_bitrate_no_lock (client, bitrate);
+  GST_M3U8_CLIENT_UNLOCK (client);
+  return current_variant;
+}
+
+GList *
+gst_m3u8_client_get_playlist_for_bitrate_no_lock (GstM3U8Client * client, guint bitrate)
+{
   GList *list, *current_variant;
 
-  GST_M3U8_CLIENT_LOCK (client);
   current_variant = client->main->current_variant;
 
   /*  Go to the highest possible bandwidth allowed */
@@ -794,7 +803,6 @@ gst_m3u8_client_get_playlist_for_bitrate (GstM3U8Client * client, guint bitrate)
       break;
     current_variant = list;
   }
-  GST_M3U8_CLIENT_UNLOCK (client);
 
   return current_variant;
 }
