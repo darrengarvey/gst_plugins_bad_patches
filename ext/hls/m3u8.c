@@ -790,7 +790,7 @@ gst_m3u8_client_get_playlist_for_bitrate_no_lock (GstM3U8Client * client, guint 
   current_variant = client->main->current_variant;
 
   /*  Go to the highest possible bandwidth allowed */
-  while (GST_M3U8 (current_variant->data)->bandwidth < bitrate) {
+  while (GST_M3U8 (current_variant->data)->bandwidth <= bitrate) {
     list = g_list_next (current_variant);
     if (!list)
       break;
