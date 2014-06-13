@@ -1460,6 +1460,8 @@ gst_hls_demux_get_next_fragment (GstHLSDemux * demux, gboolean caching)
     goto error;
 
   buf = gst_fragment_get_buffer (download);
+  if (buf == NULL)
+    goto error;
 
   GST_BUFFER_DURATION (buf) = duration;
   GST_BUFFER_PTS (buf) = timestamp;
