@@ -153,10 +153,8 @@ gst_hls_demux_dispose (GObject * obj)
       gst_uri_downloader_cancel (demux->downloader);
       gst_task_stop (demux->updates_task);
       if(updates_task_state == GST_TASK_STARTED)
-        g_mutex_lock (&demux->updates_timed_lock);
-      GST_TASK_SIGNAL (demux->updates_task);
-      g_rec_mutex_lock (&demux->updates_lock);
-      g_rec_mutex_unlock (&demux->updates_lock);
+        g_mutex_lock (&demux->updates_timed_lock);     
+      GST_TASK_SIGNAL (demux->updates_task);      
       if(updates_task_state == GST_TASK_STARTED)
         g_mutex_unlock (&demux->updates_timed_lock);
       gst_task_join (demux->updates_task);
