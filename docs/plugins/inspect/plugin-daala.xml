@@ -1,0 +1,55 @@
+<plugin>
+  <name>daala</name>
+  <description>Daala plugin</description>
+  <filename>../../ext/daala/.libs/libgstdaala.so</filename>
+  <basename>libgstdaala.so</basename>
+  <version>1.1.1.1</version>
+  <license>LGPL</license>
+  <source>gst-plugins-bad</source>
+  <package>GStreamer Bad Plug-ins git</package>
+  <origin>Unknown package origin</origin>
+  <elements>
+    <element>
+      <name>daaladec</name>
+      <longname>Daala video decoder</longname>
+      <class>Codec/Decoder/Video</class>
+      <description>Decode raw Daala streams to raw YUV video</description>
+      <author>Sebastian Dröge &lt;slomo@circular-chaos.org&gt;</author>
+      <pads>
+        <caps>
+          <name>sink</name>
+          <direction>sink</direction>
+          <presence>always</presence>
+          <details>video/x-daala</details>
+        </caps>
+        <caps>
+          <name>src</name>
+          <direction>source</direction>
+          <presence>always</presence>
+          <details>video/x-raw, format=(string){ I420, Y444 }, framerate=(fraction)[ 0/1, 2147483647/1 ], width=(int)[ 1, 2147483647 ], height=(int)[ 1, 2147483647 ]</details>
+        </caps>
+      </pads>
+    </element>
+    <element>
+      <name>daalaenc</name>
+      <longname>Daala video encoder</longname>
+      <class>Codec/Encoder/Video</class>
+      <description>Encode raw YUV video to a Daala stream</description>
+      <author>Sebastian Dröge &lt;slomo@circular-chaos.org&gt;</author>
+      <pads>
+        <caps>
+          <name>sink</name>
+          <direction>sink</direction>
+          <presence>always</presence>
+          <details>video/x-raw, format=(string){ I420, Y444 }, width=(int)[ 1, 2147483647 ], height=(int)[ 1, 2147483647 ], framerate=(fraction)[ 0/1, 2147483647/1 ]</details>
+        </caps>
+        <caps>
+          <name>src</name>
+          <direction>source</direction>
+          <presence>always</presence>
+          <details>video/x-daala, framerate=(fraction)[ 1/2147483647, 2147483647/1 ], width=(int)[ 1, 2147483647 ], height=(int)[ 1, 2147483647 ]</details>
+        </caps>
+      </pads>
+    </element>
+  </elements>
+</plugin>
